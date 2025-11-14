@@ -1,0 +1,28 @@
+[project]
+name = "book-bitch"
+version = "0.1.0"
+description = "FastAPI + Streamlit RAG"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "pdfplumber",
+  "tiktoken",
+  "openai",
+  "pinecone-client",
+  "python-dotenv",
+  "pydantic",
+  "httpx",
+  "streamlit",
+  "requests",
+  "pytest",
+  "sentence-transformers",
+  "faiss-cpu ; platform_system != 'Windows'"
+]
+
+[tool.setuptools]
+packages = ["app"]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
