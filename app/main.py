@@ -1,11 +1,11 @@
 import json
 from pathlib import Path
 import shutil
-import logging
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 import requests
+import logging
 
 from .config import Settings, get_settings
 from .ingest import ingest_pdf, init_pinecone
@@ -15,6 +15,10 @@ settings = get_settings()
 data_dir = Path(settings.data_dir)
 data_dir.mkdir(parents=True, exist_ok=True)
 books_file = data_dir / "books.json"
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 app = FastAPI(title="Book Bitch RAG API")
 
@@ -99,6 +103,9 @@ def generate_answer(question: str, context: str) -> str:
 
 @app.get("/books", response_model=list[BookInfo])
 def list_books(_: Settings = Depends(get_settings)):
+    logger.info("Using embeddings via %s, LLM provider %s", 
+            settings.openai_embed_model if not settings.use_faiss else settings.local_embed_model,
+            settings.llm_provider)
     return load_books()
 
 
@@ -149,10 +156,6 @@ async def ask_question(payload: AskRequest, index: any = Depends(get_index)):
     context = "\n\n".join(
         [f"[Page {m.page}] {m.text}" for m in extracts if m.text]
     ) or "No context retrieved."
-
-    logging.info("Embeddings via %s, LLM provider %s", 
-            settings.openai_embed_model if not settings.use_faiss else settings.local_embed_model,
-            settings.llm_provider)
 
     answer = generate_answer(payload.question, context)
     return AskResponse(answer=answer, evidence=extracts)
