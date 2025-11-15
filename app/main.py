@@ -5,6 +5,7 @@ import shutil
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
+import requests
 
 from .config import Settings, get_settings
 from .ingest import ingest_pdf, init_pinecone
@@ -31,7 +32,6 @@ def get_index() -> any:
         raise HTTPException(status_code=501, detail="FAISS backend not implemented yet.")
     return init_pinecone()
 
-
 def load_books() -> list[BookInfo]:
     if not books_file.exists():
         return []
@@ -39,11 +39,63 @@ def load_books() -> list[BookInfo]:
         data = json.load(f)
     return [BookInfo(**item) for item in data]
 
-
 def save_books(books: list[BookInfo]) -> None:
     with books_file.open("w", encoding="utf-8") as f:
         json.dump([book.dict() for book in books], f, indent=2)
 
+def build_prompt(question: str, context: str) -> str:
+    system_message = (
+        "You are a tutor that MUST ONLY use the provided extracts. "
+        "If the answer cannot be found in the extracts, reply "
+        "'Insufficient evidence in book' and suggest where to look."
+    )
+    user_prompt = (
+        f"Question: {question}\n\n"
+        f"Extracts:\n{context}\n\n"
+        "Return a short answer and list evidence lines with page numbers."
+    )
+    return system_message, user_prompt
+
+def generate_answer(question: str, context: str) -> str:
+    system_message, user_prompt = build_prompt(question, context)
+
+    if settings.llm_provider.lower() == "groq":
+        if not settings.groq_api_key:
+            raise HTTPException(status_code=500, detail="GROQ_API_KEY is missing.")
+        groq_payload = {
+            "model": settings.groq_model,
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0,
+        }
+        resp = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.groq_api_key}",
+                "Content-Type": "application/json",
+            },
+            json=groq_payload,
+            timeout=60,
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
+
+    # default: OpenAI
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is missing.")
+    completion = openai_client.chat.completions.create(
+        model=settings.openai_chat_model,
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0,
+    )
+    return completion.choices[0].message.content
 
 @app.get("/books", response_model=list[BookInfo])
 def list_books(_: Settings = Depends(get_settings)):
@@ -98,25 +150,5 @@ async def ask_question(payload: AskRequest, index: any = Depends(get_index)):
         [f"[Page {m.page}] {m.text}" for m in extracts if m.text]
     ) or "No context retrieved."
 
-    system_message = (
-        "You are a tutor that MUST ONLY use the provided extracts. "
-        "If the answer cannot be found in the extracts, reply "
-        "'Insufficient evidence in book' and suggest where to look."
-    )
-    user_prompt = (
-        f"Question: {payload.question}\n\n"
-        f"Extracts:\n{context}\n\n"
-        "Return a short answer and list evidence lines with page numbers."
-    )
-
-    completion = openai_client.chat.completions.create(
-        model=settings.openai_chat_model,
-        messages=[
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0,
-    )
-
-    answer = completion.choices[0].message.content
+    answer = generate_answer(payload.question, context)
     return AskResponse(answer=answer, evidence=extracts)
