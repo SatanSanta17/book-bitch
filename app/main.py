@@ -5,11 +5,10 @@ import shutil
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
-import pinecone
 
-from .config import get_settings, Settings
-from .models import UploadResponse, AskRequest, AskResponse, MatchMetadata, BookInfo
-from .ingest import ingest_pdf
+from .config import Settings, get_settings
+from .ingest import ingest_pdf, init_pinecone
+from .models import AskRequest, AskResponse, BookInfo, MatchMetadata, UploadResponse
 
 settings = get_settings()
 data_dir = Path(settings.data_dir)
@@ -27,17 +26,10 @@ app.add_middleware(
 
 openai_client = OpenAI(api_key=settings.openai_api_key)
 
-_pinecone_index: pinecone.Index | None = None
-
-
-def get_index() -> pinecone.Index:
-    global _pinecone_index
+def get_index() -> any:
     if settings.use_faiss:
         raise HTTPException(status_code=501, detail="FAISS backend not implemented yet.")
-    if _pinecone_index is None:
-        pinecone.init(api_key=settings.pinecone_api_key, environment=settings.pinecone_env)
-        _pinecone_index = pinecone.Index(settings.pinecone_index)
-    return _pinecone_index
+    return init_pinecone()
 
 
 def load_books() -> list[BookInfo]:
@@ -79,7 +71,7 @@ async def upload_pdf(file: UploadFile = File(...), _: Settings = Depends(get_set
 
 
 @app.post("/ask", response_model=AskResponse)
-async def ask_question(payload: AskRequest, index: pinecone.Index = Depends(get_index)):
+async def ask_question(payload: AskRequest, index: any = Depends(get_index)):
     books = load_books()
     if not any(book.book_id == payload.book_id for book in books):
         raise HTTPException(status_code=404, detail="Unknown book_id; upload the book first.")
@@ -96,10 +88,10 @@ async def ask_question(payload: AskRequest, index: pinecone.Index = Depends(get_
         filter={"book_id": {"$eq": payload.book_id}},
     )
 
-    matches = results.matches if hasattr(results, "matches") else results["matches"]
+    matches = results.matches
     extracts = []
     for match in matches:
-        metadata = match.metadata if hasattr(match, "metadata") else match["metadata"]
+        metadata = match.metadata
         extracts.append(MatchMetadata(**metadata))
 
     context = "\n\n".join(
@@ -126,5 +118,5 @@ async def ask_question(payload: AskRequest, index: pinecone.Index = Depends(get_
         temperature=0,
     )
 
-    answer = completion.choices[0].message["content"]
+    answer = completion.choices[0].message.content
     return AskResponse(answer=answer, evidence=extracts)

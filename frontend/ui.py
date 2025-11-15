@@ -1,7 +1,8 @@
 import streamlit as st
 import requests
+import os
 
-API_URL = st.secrets.get("api_url", "http://localhost:8000")
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 st.set_page_config(page_title="Book Bitch Tutor", layout="wide")
 st.title("Book Bitch – Grounded Tutor")
