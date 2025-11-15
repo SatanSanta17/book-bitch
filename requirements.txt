@@ -4,7 +4,6 @@ annotated-types==0.7.0
 anyio==4.11.0
 attrs==25.4.0
 blinker==1.9.0
--e git+ssh://git@github-personal/SatanSanta17/book-bitch.git@6308247b3c1cd24b03efbad883eb4db515fe38af#egg=book_bitch
 cachetools==6.2.2
 certifi==2025.11.12
 cffi==2.0.0
