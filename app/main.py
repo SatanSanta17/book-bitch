@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 import shutil
-
+import logging
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
@@ -149,6 +149,10 @@ async def ask_question(payload: AskRequest, index: any = Depends(get_index)):
     context = "\n\n".join(
         [f"[Page {m.page}] {m.text}" for m in extracts if m.text]
     ) or "No context retrieved."
+
+    logging.info("Embeddings via %s, LLM provider %s", 
+            settings.openai_embed_model if not settings.use_faiss else settings.local_embed_model,
+            settings.llm_provider)
 
     answer = generate_answer(payload.question, context)
     return AskResponse(answer=answer, evidence=extracts)
