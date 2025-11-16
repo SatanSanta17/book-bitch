@@ -7,18 +7,14 @@ dependencies = [
   "fastapi",
   "uvicorn[standard]",
   "pdfplumber",
-  "tiktoken",
   "openai",
   "pinecone",
   "python-dotenv",
   "pydantic",
   "pydantic-settings",
-  "httpx",
-  "streamlit",
+  "python-multipart",
   "requests",
-  "pytest",
-  "sentence-transformers",
-  "faiss-cpu ; platform_system != 'Windows'"
+  "streamlit"
 ]
 
 [tool.setuptools]
