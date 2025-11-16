@@ -4,6 +4,9 @@ import os
 
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
+MAX_FILE_SIZE_MB = 20
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+
 st.set_page_config(page_title="Book Bitch Tutor", layout="wide")
 st.title("Book Bitch – Grounded Tutor")
 
@@ -36,22 +39,28 @@ with st.sidebar:
         st.session_state.book_id = selected
 
     uploaded = st.file_uploader("Upload textbook (PDF)", type=["pdf"])
-    if uploaded and st.button("Ingest PDF"):
-        with st.spinner("Uploading and ingesting..."):
-            response = requests.post(
-                f"{API_URL}/upload/",
-                files={"file": (uploaded.name, uploaded.getvalue(), "application/pdf")},
-                timeout=600,
-            )
-        if response.ok:
-            data = response.json()
-            st.success(f"Book ingested: {data['book_id']} ({data['chunks']} chunks)")
-            books = refresh_books()
-            if data["book_id"] not in book_options:
-                book_options.append(data["book_id"])
-            st.session_state.book_id = data["book_id"]
-        else:
-            st.error(response.text)
+    if uploaded:
+        file_size = getattr(uploaded, "size", None)
+        if file_size is None:
+            file_size = len(uploaded.getvalue())
+        if file_size > MAX_FILE_SIZE_BYTES:
+            st.error(f"PDF must be {MAX_FILE_SIZE_MB} MB or less.")
+        elif st.button("Ingest PDF"):
+            with st.spinner("Uploading and ingesting..."):
+                response = requests.post(
+                    f"{API_URL}/upload/",
+                    files={"file": (uploaded.name, uploaded.getvalue(), "application/pdf")},
+                    timeout=600,
+                )
+            if response.ok:
+                data = response.json()
+                st.success(f"Book ingested: {data['book_id']} ({data['chunks']} chunks)")
+                books = refresh_books()
+                if data["book_id"] not in book_options:
+                    book_options.append(data["book_id"])
+                st.session_state.book_id = data["book_id"]
+            else:
+                st.error(response.text)
 
 if not st.session_state.book_id:
     st.info("Upload or select a book to start chatting.")

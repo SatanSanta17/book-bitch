@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 import requests
 import logging
+import os
 
 from .config import Settings, get_settings
 from .ingest import ingest_pdf, init_pinecone
@@ -18,6 +19,10 @@ books_file = data_dir / "books.json"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+MAX_FILE_SIZE_MB = 20
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 
 app = FastAPI(title="Book Bitch RAG API")
@@ -108,11 +113,17 @@ def list_books(_: Settings = Depends(get_settings)):
             settings.llm_provider)
     return load_books()
 
-
 @app.post("/upload/", response_model=UploadResponse)
 async def upload_pdf(file: UploadFile = File(...), _: Settings = Depends(get_settings)):
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+
+    file.file.seek(0, os.SEEK_END)
+    size = file.file.tell()
+    file.file.seek(0)
+
+    if size > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail=f"PDF must be ≤{MAX_FILE_SIZE_MB} MB.")
 
     book_id = Path(file.filename).stem
     dest = data_dir / file.filename
